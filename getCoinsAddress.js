@@ -1,5 +1,4 @@
 import { Actor } from 'apify';
-import { PuppeteerBrowser } from 'crawlee';  // Crawlee 的 Puppeteer 支持
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
@@ -10,30 +9,25 @@ Actor.main(async () => {
   try {
     console.log('Starting browser launch in Apify...');
 
-    // 使用 Crawlee 的 PuppeteerBrowser（推荐方式）
-    const browserLauncher = new PuppeteerBrowser({
-      launchContext: {
-        launchOptions: {
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-zygote',
-            '--single-process',
-            '--disable-extensions',
-            '--disable-background-timer-throttling'
-          ],
-          ignoreHTTPSErrors: true,
-          timeout: 120000
-        },
-        useChrome: true,  // 优先 Apify 提供的 Chrome
-        stealth: true     // 启用 stealth（如果需要）
-      }
+    // 直接用 puppeteerExtra.launch（兼容 Apify Docker）
+    browser = await puppeteerExtra.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',  // Apify 镜像路径
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
+      ],
+      ignoreHTTPSErrors: true,
+      timeout: 120000
     });
-
-    browser = await browserLauncher.launch();
 
     console.log('Browser launched successfully!');
 
@@ -50,6 +44,7 @@ Actor.main(async () => {
       timeout: 90000
     });
 
+    // 等待数据加载
     await page.waitForFunction(
       () => window.__SERVER_DATA !== undefined && window.__SERVER_DATA !== null,
       { timeout: 60000 }
@@ -77,6 +72,7 @@ Actor.main(async () => {
 
   } catch (error) {
     console.error('Critical error:', error.stack || error.message);
+
     await Actor.pushData({
       status: 'failed',
       error: error.message || 'Unknown error',
