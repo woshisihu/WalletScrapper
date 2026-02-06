@@ -1,33 +1,33 @@
-import { main as ApifyMain, launchPuppeteer, pushData } from 'apify';
+import { Actor } from 'apify';  // 正确导入：Actor 是主对象
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
 puppeteer.use(StealthPlugin());
 
-ApifyMain(async () => {
+Actor.main(async () => {
   let browser;
   try {
     console.log('Starting browser launch in Apify...');
 
-    // 使用 Apify.launchPuppeteer() 兼容 Docker 环境
-    browser = await launchPuppeteer({
-      useChrome: true,  // 优先使用 Apify 提供的 Chrome
+    // 使用 Actor.launchPuppeteer()（Apify SDK v3+ 推荐）
+    browser = await Actor.launchPuppeteer({
+      useChrome: true,
       launchOptions: {
         headless: true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',     // 避免 /dev/shm 空间不足
-          '--disable-gpu',               // 避免 GPU 相关错误
-          '--no-zygote',                 // 避免 zygote 进程问题
-          '--single-process',            // 单进程模式，更稳定
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-zygote',
+          '--single-process',
           '--disable-extensions',
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding'
         ],
         ignoreHTTPSErrors: true,
-        timeout: 120000  // 启动超时延长到 120 秒
+        timeout: 120000
       }
     });
 
@@ -35,7 +35,6 @@ ApifyMain(async () => {
 
     const page = await browser.newPage();
 
-    // 设置真实 UA 和视窗大小（防检测）
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
@@ -44,20 +43,18 @@ ApifyMain(async () => {
     console.log('Fetching Dexscreener...');
     await page.goto('https://dexscreener.com/', {
       waitUntil: 'networkidle2',
-      timeout: 90000  // 页面加载超时延长
+      timeout: 90000
     });
 
-    // 等待 DexScreener 的 SPA 数据加载完成
+    // 等待数据加载（更健壮）
     await page.waitForFunction(
       () => window.__SERVER_DATA !== undefined && window.__SERVER_DATA !== null,
       { timeout: 60000 }
     ).catch(() => {
-      console.warn('__SERVER_DATA not loaded within timeout, proceeding anyway.');
+      console.warn('__SERVER_DATA timeout, but continuing...');
     });
 
-    const serverData = await page.evaluate(() => {
-      return window.__SERVER_DATA || null;
-    });
+    const serverData = await page.evaluate(() => window.__SERVER_DATA || null);
 
     let data = [];
     if (serverData?.route?.data?.dexScreenerData?.pairs) {
@@ -67,11 +64,11 @@ ApifyMain(async () => {
       }));
       console.log(`Extracted ${data.length} pairs successfully.`);
     } else {
-      console.log('window.__SERVER_DATA not found or no pairs data.');
+      console.log('No __SERVER_DATA or pairs found.');
     }
 
-    // 输出到 Apify Dataset（关键一步）
-    await pushData({
+    // 输出到 Dataset
+    await Actor.pushData({
       timestamp: new Date().toISOString(),
       source: 'dexscreener',
       pairs: data,
@@ -79,10 +76,9 @@ ApifyMain(async () => {
     });
 
   } catch (error) {
-    console.error('Critical error during execution:', error.stack || error.message);
+    console.error('Critical error:', error.stack || error.message);
 
-    // 失败时也输出信息，便于调试
-    await pushData({
+    await Actor.pushData({
       status: 'failed',
       error: error.message || 'Unknown error',
       timestamp: new Date().toISOString()
@@ -95,7 +91,7 @@ ApifyMain(async () => {
   }
 });
 
-// 全局错误捕获，防止 uncaught exception 导致 Actor 崩溃
+// 全局错误捕获
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION:', err.stack);
 });
